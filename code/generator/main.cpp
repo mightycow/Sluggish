@@ -350,12 +350,6 @@ static bool ProcessFont(const char* inputPath, const char* outputPath)
 		return false;
 	}
 
-	if(g_codePoints.empty())
-	{
-		PrintError("No valid code point found: %s\n", inputPath);
-		return false;
-	}
-
 	// fix up the bands' texel offsets first
 	const u32 bandsTexTexels = (u32)(g_bandsTextureBandOffsets.size() + g_bandsTextureCurveOffsets.size()) / 2;
 	const u16 bandHeaderTexels = (u16)(g_bandsTextureBandOffsets.size() / 2);
