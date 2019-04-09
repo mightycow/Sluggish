@@ -1,0 +1,8 @@
+*.sdf
+*.opensdf
+*.suo
+*.ncb
+*.idb
+*.vcxproj.user
+makefiles/vs*/bin
+makefiles/vs*/obj

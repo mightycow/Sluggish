@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="generator">
+      <UniqueIdentifier>{AC378C0D-18A2-4084-61E0-F129CD891ED9}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\code\generator\stb_truetype.h">
+      <Filter>generator</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\shared.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\code\generator\main.cpp">
+      <Filter>generator</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\generator\stb_truetype.cpp">
+      <Filter>generator</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\shared.cpp" />
+  </ItemGroup>
+</Project>

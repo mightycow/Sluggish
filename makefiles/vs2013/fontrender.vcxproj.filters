@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="renderer_sw">
+      <UniqueIdentifier>{855817AE-F10D-90A3-7A02-8A7AE6B686A7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\code\renderer_sw\stb_image_write.h">
+      <Filter>renderer_sw</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\code\shared.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\code\renderer_sw\main.cpp">
+      <Filter>renderer_sw</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\renderer_sw\stb_image_write.cpp">
+      <Filter>renderer_sw</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\code\shared.cpp" />
+  </ItemGroup>
+</Project>
