@@ -15,14 +15,19 @@
 
 #pragma pack(push, 1)
 
+struct float2
+{
+	f32 v[2];
+};
+
 struct float4
 {
-	f32 x, y, z, w;
+	f32 v[4];
 };
 
 struct ushort2
 {
-	u16 x, y;
+	u16 v[2];
 };
 
 #pragma pack(pop)
@@ -36,17 +41,17 @@ std::vector<float4> curvesTexture;
 #if defined(_DEBUG)
 static void CheckCurve(ushort2 b, float4 p12, float4 p3)
 {
-	if(b.x == BANDS_TAG_2 ||
-	   b.y == BANDS_TAG_2)
+	if(b.v[0] == BANDS_TAG_2 ||
+	   b.v[1] == BANDS_TAG_2)
 	{
 		PrintWarning("Uninitialized band used.\n");
 	}
-	if(p12.x == CURVES_TAG_4 ||
-	   p12.y == CURVES_TAG_4 ||
-	   p12.z == CURVES_TAG_4 ||
-	   p12.w == CURVES_TAG_4 ||
-	   p3.x == CURVES_TAG_4 ||
-	   p3.y == CURVES_TAG_4)
+	if(p12.v[0] == CURVES_TAG_4 ||
+	   p12.v[1] == CURVES_TAG_4 ||
+	   p12.v[2] == CURVES_TAG_4 ||
+	   p12.v[3] == CURVES_TAG_4 ||
+	   p3.v[0] == CURVES_TAG_4 ||
+	   p3.v[1] == CURVES_TAG_4)
 	{
 		PrintWarning("Uninitialized curve used.\n");
 	}
@@ -123,6 +128,63 @@ static bool LoadFont(const char* inputPath)
 	return true;
 }
 
+static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0, f32 pixelsPerEm)
+{
+	const u32 axis1 = 1 - axis0;
+	f32 coverage = 0.0f;
+
+	for(u32 curveIdx = 0; curveIdx < curveCount; ++curveIdx)
+	{
+		const ushort2 curveCoords = bandsTexture[bandOffset + curveIdx];
+		const u32 curveX = curveCoords.v[0];
+		const u32 curveY = curveCoords.v[1];
+		const float4 cp12 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 0];
+		const float4 cp3 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 1];
+		CHECK_CURVE(curveCoords, cp12, cp3);
+
+		const float2 p1 = { cp12.v[0] - fx0, cp12.v[1] - fy0 };
+		const float2 p2 = { cp12.v[2] - fx0, cp12.v[3] - fy0 };
+		const float2 p3 = { cp3.v[0] - fx0, cp3.v[1] - fy0 };
+		if(Max(p1.v[axis0], p2.v[axis0], p3.v[axis0]) * pixelsPerEm < -0.5f)
+		{
+			// no more curves to intersect with
+			break;
+		}
+
+		const f32 a = p1.v[axis1] - 2.0f * p2.v[axis1] + p3.v[axis1];
+		const f32 b = p1.v[axis1] - p2.v[axis1];
+		const f32 c = p1.v[axis1];
+		f32 t1, t2;
+		if(fabsf(a) < 0.0001f)
+		{
+			t1 = t2 = c / (2.0f * b);
+		}
+		else
+		{
+			const f32 rootArg = Max(b*b - a*c, 0.0f);
+			const f32 root = sqrtf(rootArg);
+			t1 = (b - root) / a;
+			t2 = (b + root) / a;
+		}
+
+		const uint input = ((p1.v[axis1] > 0.0f) ? 2 : 0) + ((p2.v[axis1] > 0.0f) ? 4 : 0) + ((p3.v[axis1] > 0.0f) ? 8 : 0);
+		const uint output = 0x2E74 >> input;
+		if((output & 1) != 0)
+		{
+			const f32 r1 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t1);
+			coverage += Clamp(0.5f + r1 * pixelsPerEm, 0.0f, 1.0f);
+		}
+
+		if((output & 2) != 0)
+		{
+			const f32 r2 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t2);
+			coverage -= Clamp(0.5f + r2 * pixelsPerEm, 0.0f, 1.0f);
+		}
+	}
+
+	return coverage;
+}
+
 static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h, bool preverveAspect)
 {
 	SluggishCodePoint cp = { 0 };
@@ -181,8 +243,8 @@ static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h,
 		}
 
 		const ushort2 hBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + hBandIdx];
-		const u32 hBandCurveCount = hBand.x;
-		const u32 hBandBandOffset = hBand.y;
+		const u32 hBandCurveCount = hBand.v[0];
+		const u32 hBandBandOffset = hBand.v[1];
 
 		for(u32 x = 0; x < w; ++x)
 		{
@@ -194,134 +256,14 @@ static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h,
 			}
 
 			const ushort2 vBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + bandCount + vBandIdx];
-			const u32 vBandCurveCount = vBand.x;
-			const u32 vBandBandOffset = vBand.y;
-
-			// shoot a horizontal ray for each curve
-			f32 coverageX = 0.0f;
-			for(u32 c = 0; c < hBandCurveCount; ++c)
-			{
-				const ushort2 hBandCurveCoords = bandsTexture[hBandBandOffset + c];
-				const u32 curveX = hBandCurveCoords.x;
-				const u32 curveY = hBandCurveCoords.y;
-				const float4 p12 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 0];
-				const float4 p3 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 1];
-				CHECK_CURVE(hBandCurveCoords, p12, p3);
-
-				const f32 fx1 = p12.x - fx0;
-				const f32 fx2 = p12.z - fx0;
-				const f32 fx3 = p3.x - fx0;
-				if(Max(fx1, fx2, fx3) * pixelsPerEmX < -0.5f)
-				{
-					// no more curves to intersect with
-					break;
-				}
-				
-				const f32 fy1 = p12.y - fy0;
-				const f32 fy2 = p12.w - fy0;
-				const f32 fy3 = p3.y - fy0;
-
-				const f32 ay = fy1 - 2.0f * fy2 + fy3;
-				const f32 by = fy1 - fy2;
-				const f32 cy = fy1;
-				f32 t1, t2;
-				if(fabsf(ay) < 0.001f)
-				{
-					t1 = t2 = cy / (2.0f * by);
-				}
-				else
-				{
-					const f32 rootArg = Max(by*by - ay*cy, 0.0f);
-					const f32 root = sqrtf(rootArg);
-					t1 = (by - root) / ay;
-					t2 = (by + root) / ay;
-				}
-
-				const uint input = ((fy1 > 0.0f) ? 2 : 0) + ((fy2 > 0.0f) ? 4 : 0) + ((fy3 > 0.0f) ? 8 : 0);
-				const uint output = 0x2E74 >> input;
-
-				const f32 Cx1 = EvaluateQuadraticBezierCurve(fx1, fx2, fx3, t1);
-				const f32 Cx2 = EvaluateQuadraticBezierCurve(fx1, fx2, fx3, t2);
-
-				if((output & 1) != 0)
-				{
-					coverageX += Clamp(0.5f + Cx1 * pixelsPerEmX, 0.0f, 1.0f);
-				}
-
-				if((output & 2) != 0)
-				{
-					coverageX -= Clamp(0.5f + Cx2 * pixelsPerEmX, 0.0f, 1.0f);
-				}
-			}
-
-#if 1
-			// shoot a vertical ray for each curve
-			f32 coverageY = 0.0f;
-			for(u32 c = 0; c < vBandCurveCount; ++c)
-			{
-				const ushort2 vBandCurveCoords = bandsTexture[vBandBandOffset + c];
-				const u32 curveX = vBandCurveCoords.x;
-				const u32 curveY = vBandCurveCoords.y;
-				const float4 p12 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 0];
-				const float4 p3 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 1];
-				CHECK_CURVE(vBandCurveCoords, p12, p3);
-
-				const f32 fy0 = offsetY + (f32)y * scaleY;
-				const f32 fy1 = p12.y - fy0;
-				const f32 fy2 = p12.w - fy0;
-				const f32 fy3 = p3.y - fy0;
-				if(Max(fy1, fy2, fy3) * pixelsPerEmY < -0.5f)
-				{
-					// no more curves to intersect with
-					break;
-				}
-
-				const f32 fx0 = offsetX + (f32)x * scaleX;
-				const f32 fx1 = p12.x - fx0;
-				const f32 fx2 = p12.z - fx0;
-				const f32 fx3 = p3.x - fx0;
-
-				const f32 ax = fx1 - 2.0f * fx2 + fx3;
-				const f32 bx = fx1 - fx2;
-				const f32 cx = fx1;
-				f32 t1, t2;
-				if(fabsf(ax) < 0.001f)
-				{
-					t1 = t2 = cx / (2.0f * bx);
-				}
-				else
-				{
-					const f32 rootArg = Max(bx*bx - ax*cx, 0.0f);
-					const f32 root = sqrtf(rootArg);
-					t1 = (bx - root) / ax;
-					t2 = (bx + root) / ax;
-				}
-
-				const uint input = ((fx1 > 0.0f) ? 2 : 0) + ((fx2 > 0.0f) ? 4 : 0) + ((fx3 > 0.0f) ? 8 : 0);
-				const uint output = 0x2E74 >> input;
-
-				const f32 Cy1 = EvaluateQuadraticBezierCurve(fy1, fy2, fy3, t1);
-				const f32 Cy2 = EvaluateQuadraticBezierCurve(fy1, fy2, fy3, t2);
-
-				if((output & 1) != 0)
-				{
-					coverageY += Clamp(0.5f + Cy1 * pixelsPerEmY, 0.0f, 1.0f);
-				}
-
-				if((output & 2) != 0)
-				{
-					coverageY -= Clamp(0.5f + Cy2 * pixelsPerEmY, 0.0f, 1.0f);
-				}
-			}
-
+			const u32 vBandCurveCount = vBand.v[0];
+			const u32 vBandBandOffset = vBand.v[1];
+			f32 coverageX = TraceRay(0, hBandCurveCount, hBandBandOffset, fx0, fy0, pixelsPerEmX);
+			f32 coverageY = TraceRay(1, vBandCurveCount, vBandBandOffset, fx0, fy0, pixelsPerEmY);
 			coverageX = Min(fabsf(coverageX), 1.0f);
 			coverageY = Min(fabsf(coverageY), 1.0f);
 			const f32 coverage = (coverageX + coverageY) * 0.5f;
 			imageData[yi*w + x] = (u8)(coverage * 255.0f);
-#else
-			coverageX = Min(fabsf(coverageX), 1.0f);
-			imageData[yi*w + x] = (u8)(coverageX * 255.0f);
-#endif
 		}
 	}
 
