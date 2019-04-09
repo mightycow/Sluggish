@@ -18,17 +18,16 @@ I recommend reading at least the slides linked in the reference section before a
 | Software renderer | Reads a .sluggish file and outputs a .tga image per specified code point |
 | Hardware renderer | Reads a .sluggish file and renders up to 6 specified glyphs using OpenGL |
 
-What's covered by this project?
 | Feature | Support |
 |:--|:--|
-| Curves texture generation (FP32) | YES |
-| Bands texture generation (U16) | YES |
+| Curves texture (FP32) | YES |
+| Bands texture (U16) | YES |
 | Cutting glyphs into bands (performance) | YES |
 | Sorting curves (performance) | YES |
 | High-quality implementation of anything | NO |
 | High performance | NO |
 | 16-bit floating point encoding | NO |
-| Tricks for reducing file sizes<br>(de-duplication, compression, ...) | NO |
+| Data de-duplication and compression | NO |
 | Text layouting | NO |
 | Colored shapes | NO |
 | Adaptive super-sampling | NO |
