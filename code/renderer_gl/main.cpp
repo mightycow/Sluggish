@@ -89,39 +89,41 @@ void main()
 
 		// generate the classification code
 		uint code = (0x2E74U >> (((p1y > 0.0) ? 2U : 0U) + ((p2y > 0.0) ? 4U : 0U) + ((p3y > 0.0) ? 8U : 0U))) & 3U;
-		if(code != 0U)
+		if(code == 0U)
 		{
-			// we're interesecting this curve
-			// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
-			float ax = p1x - p2x * 2.0 + p3x;
-			float ay = p1y - p2y * 2.0 + p3y;
-			float bx = p1x - p2x;
-			float by = p1y - p2y;
-			float c = p1y;
-			float ayr = 1.0 / ay;
-			float d = sqrt(max(by * by - ay * c, 0.0));
-			float t1 = (by - d) * ayr;
-			float t2 = (by + d) * ayr;
+			// we're not intersecting this curve
+			continue;
+		}
 
-			if(abs(ay) < epsilon)
-			{
-				// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
-				t1 = t2 = c / (2.0 * by);
-			}
+		// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
+		float ax = p1x - p2x * 2.0 + p3x;
+		float ay = p1y - p2y * 2.0 + p3y;
+		float bx = p1x - p2x;
+		float by = p1y - p2y;
+		float c = p1y;
+		float ayr = 1.0 / ay;
+		float d = sqrt(max(by * by - ay * c, 0.0));
+		float t1 = (by - d) * ayr;
+		float t2 = (by + d) * ayr;
 
-			if((code & 1U) != 0U)
-			{
-				float x1 = (ax * t1 - bx * 2.0) * t1 + p1x;
-				float c = clamp(x1 * pixelsPerEm.x + 0.5, 0.0, 1.0);
-				coverageX += c;
-			}
+		if(abs(ay) < epsilon)
+		{
+			// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
+			t1 = t2 = c / (2.0 * by);
+		}
 
-			if(code > 1U)
-			{
-				float x2 = (ax * t2 - bx * 2.0) * t2 + p1x;
-				float c = clamp(x2 * pixelsPerEm.x + 0.5, 0.0, 1.0);
-				coverageX -= c;
-			}
+		if((code & 1U) != 0U)
+		{
+			float x1 = (ax * t1 - bx * 2.0) * t1 + p1x;
+			float c = clamp(x1 * pixelsPerEm.x + 0.5, 0.0, 1.0);
+			coverageX += c;
+		}
+
+		if(code > 1U)
+		{
+			float x2 = (ax * t2 - bx * 2.0) * t2 + p1x;
+			float c = clamp(x2 * pixelsPerEm.x + 0.5, 0.0, 1.0);
+			coverageX -= c;
 		}
 	}
 
@@ -148,39 +150,41 @@ void main()
 
 		// generate the classification code
 		uint code = (0x2E74U >> (((p1x > 0.0) ? 2U : 0U) + ((p2x > 0.0) ? 4U : 0U) + ((p3x > 0.0) ? 8U : 0U))) & 3U;
-		if(code != 0U)
+		if(code == 0U)
 		{
-			// we're interesecting this curve
-			// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
-			float ax = p1x - p2x * 2.0 + p3x;
-			float ay = p1y - p2y * 2.0 + p3.y;
-			float bx = p1x - p2x;
-			float by = p1y - p2y;
-			float c = p1x;
-			float axr = 1.0 / ax;
-			float d = sqrt(max(bx * bx - ax * c, 0.0));
-			float t1 = (bx - d) * axr;
-			float t2 = (bx + d) * axr;
+			// we're not intersecting this curve
+			continue;
+		}
 
-			if(abs(ax) < epsilon)
-			{
-				// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
-				t1 = t2 = c / (2.0 * bx);
-			}
+		// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
+		float ax = p1x - p2x * 2.0 + p3x;
+		float ay = p1y - p2y * 2.0 + p3.y;
+		float bx = p1x - p2x;
+		float by = p1y - p2y;
+		float c = p1x;
+		float axr = 1.0 / ax;
+		float d = sqrt(max(bx * bx - ax * c, 0.0));
+		float t1 = (bx - d) * axr;
+		float t2 = (bx + d) * axr;
 
-			if((code & 1U) != 0U)
-			{
-				float y1 = (ay * t1 - by * 2.0) * t1 + p1y;
-				float c = clamp(y1 * pixelsPerEm.y + 0.5, 0.0, 1.0);
-				coverageY += c;
-			}
+		if(abs(ax) < epsilon)
+		{
+			// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
+			t1 = t2 = c / (2.0 * bx);
+		}
 
-			if(code > 1U)
-			{
-				float y2 = (ay * t2 - by * 2.0) * t2 + p1y;
-				float c = clamp(y2 * pixelsPerEm.y + 0.5, 0.0, 1.0);
-				coverageY -= c;
-			}
+		if((code & 1U) != 0U)
+		{
+			float y1 = (ay * t1 - by * 2.0) * t1 + p1y;
+			float c = clamp(y1 * pixelsPerEm.y + 0.5, 0.0, 1.0);
+			coverageY += c;
+		}
+
+		if(code > 1U)
+		{
+			float y2 = (ay * t2 - by * 2.0) * t2 + p1y;
+			float c = clamp(y2 * pixelsPerEm.y + 0.5, 0.0, 1.0);
+			coverageY -= c;
 		}
 	}
 
