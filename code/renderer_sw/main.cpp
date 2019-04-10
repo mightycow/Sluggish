@@ -17,17 +17,17 @@
 
 struct float2
 {
-	f32 v[2];
+	f32 x, y;
 };
 
 struct float4
 {
-	f32 v[4];
+	f32 x, y, z, w;
 };
 
 struct ushort2
 {
-	u16 v[2];
+	u16 x, y;
 };
 
 #pragma pack(pop)
@@ -41,17 +41,17 @@ std::vector<float4> curvesTexture;
 #if defined(_DEBUG)
 static void CheckCurve(ushort2 b, float4 p12, float4 p3)
 {
-	if(b.v[0] == BANDS_TAG_2 ||
-	   b.v[1] == BANDS_TAG_2)
+	if(b.x == BANDS_TAG_2 ||
+	   b.y == BANDS_TAG_2)
 	{
 		PrintWarning("Uninitialized band used.\n");
 	}
-	if(p12.v[0] == CURVES_TAG_4 ||
-	   p12.v[1] == CURVES_TAG_4 ||
-	   p12.v[2] == CURVES_TAG_4 ||
-	   p12.v[3] == CURVES_TAG_4 ||
-	   p3.v[0] == CURVES_TAG_4 ||
-	   p3.v[1] == CURVES_TAG_4)
+	if(p12.x == CURVES_TAG_4 ||
+	   p12.y == CURVES_TAG_4 ||
+	   p12.z == CURVES_TAG_4 ||
+	   p12.w == CURVES_TAG_4 ||
+	   p3.x == CURVES_TAG_4 ||
+	   p3.y == CURVES_TAG_4)
 	{
 		PrintWarning("Uninitialized curve used.\n");
 	}
@@ -128,9 +128,8 @@ static bool LoadFont(const char* inputPath)
 	return true;
 }
 
-static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0, f32 pixelsPerEm)
+static f32 TraceRayBand(bool vertical, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0, f32 pixelsPerEm)
 {
-	const u32 axis1 = 1 - axis0;
 	f32 coverage = 0.0f;
 
 	// run an intersection test against every curve in the selected band
@@ -138,28 +137,41 @@ static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0,
 	{
 		// locate and load the curve data
 		const ushort2 curveCoords = bandsTexture[bandOffset + curveIdx];
-		const u32 curveX = curveCoords.v[0];
-		const u32 curveY = curveCoords.v[1];
+		const u32 curveX = curveCoords.x;
+		const u32 curveY = curveCoords.y;
 		const float4 cp12 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 0];
 		const float4 cp3 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 1];
 		CHECK_CURVE(curveCoords, cp12, cp3);
 
 		// compute the 3 curve points relative to the current pixel (fx0, fy0)
-		const float2 p1 = { cp12.v[0] - fx0, cp12.v[1] - fy0 };
-		const float2 p2 = { cp12.v[2] - fx0, cp12.v[3] - fy0 };
-		const float2 p3 = { cp3.v[0] - fx0, cp3.v[1] - fy0 };
-		if(Max(p1.v[axis0], p2.v[axis0], p3.v[axis0]) * pixelsPerEm < -0.5f)
+		// when we want to trace vertically, we swizzle the coordinates
+		// we can then continue as if we were tracing a horizontal ray
+		float2 p1, p2, p3;
+		if(vertical)
 		{
-			// the highest coordinate of this curve is lower than this pixel's
+			p1 = { cp12.y - fy0, cp12.x - fx0 };
+			p2 = { cp12.w - fy0, cp12.z - fx0 };
+			p3 = { cp3.y - fy0, cp3.x - fx0 };
+		}
+		else
+		{
+			p1 = { cp12.x - fx0, cp12.y - fy0 };
+			p2 = { cp12.z - fx0, cp12.w - fy0 };
+			p3 = { cp3.x - fx0, cp3.y - fy0 };
+		}
+
+		if(Max(p1.x, p2.x, p3.x) * pixelsPerEm < -0.5f)
+		{
+			// the rightmost coordinate of this curve is to the left of this pixel's
 			// this means means we have no more curves to intersect with
 			// since the curve data is sorted
 			break;
 		}
 
 		// solve the quadratic equation: a*t*t - 2*b*t + c = 0
-		const f32 a = p1.v[axis1] - 2.0f * p2.v[axis1] + p3.v[axis1];
-		const f32 b = p1.v[axis1] - p2.v[axis1];
-		const f32 c = p1.v[axis1];
+		const f32 a = p1.y - 2.0f * p2.y + p3.y;
+		const f32 b = p1.y - p2.y;
+		const f32 c = p1.y;
 		f32 t1, t2;
 		if(fabsf(a) < 0.0001f)
 		{
@@ -176,16 +188,16 @@ static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0,
 		}
 
 		// generate the curve classification code and update the coverage accordingly
-		const uint input = ((p1.v[axis1] > 0.0f) ? 2 : 0) + ((p2.v[axis1] > 0.0f) ? 4 : 0) + ((p3.v[axis1] > 0.0f) ? 8 : 0);
+		const uint input = ((p1.y > 0.0f) ? 2 : 0) + ((p2.y > 0.0f) ? 4 : 0) + ((p3.y > 0.0f) ? 8 : 0);
 		const uint output = 0x2E74 >> input;
 		if((output & 1) != 0)
 		{
-			const f32 r1 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t1);
+			const f32 r1 = EvaluateQuadraticBezierCurve(p1.x, p2.x, p3.x, t1);
 			coverage += Clamp(0.5f + r1 * pixelsPerEm, 0.0f, 1.0f);
 		}
 		if((output & 2) != 0)
 		{
-			const f32 r2 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t2);
+			const f32 r2 = EvaluateQuadraticBezierCurve(p1.x, p2.x, p3.x, t2);
 			coverage -= Clamp(0.5f + r2 * pixelsPerEm, 0.0f, 1.0f);
 		}
 	}
@@ -255,8 +267,8 @@ static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h,
 
 		// locate and load the horizontal band's data
 		const ushort2 hBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + hBandIdx];
-		const u32 hBandCurveCount = hBand.v[0];
-		const u32 hBandBandOffset = hBand.v[1];
+		const u32 hBandCurveCount = hBand.x;
+		const u32 hBandBandOffset = hBand.y;
 
 		for(u32 x = 0; x < w; ++x)
 		{
@@ -272,14 +284,14 @@ static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h,
 
 			// locate and load the vertical band's data
 			const ushort2 vBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + bandCount + vBandIdx];
-			const u32 vBandCurveCount = vBand.v[0];
-			const u32 vBandBandOffset = vBand.v[1];
+			const u32 vBandCurveCount = vBand.x;
+			const u32 vBandBandOffset = vBand.y;
 
 			// trace 2 rays for cheap (but imperfect) AA
 			// compute the final coverage
 			// write the pixel
-			f32 coverageX = TraceRay(0, hBandCurveCount, hBandBandOffset, fx0, fy0, pixelsPerEmX);
-			f32 coverageY = TraceRay(1, vBandCurveCount, vBandBandOffset, fx0, fy0, pixelsPerEmY);
+			f32 coverageX = TraceRayBand(false, hBandCurveCount, hBandBandOffset, fx0, fy0, pixelsPerEmX);
+			f32 coverageY = TraceRayBand(true,  vBandCurveCount, vBandBandOffset, fx0, fy0, pixelsPerEmY);
 			coverageX = Min(fabsf(coverageX), 1.0f);
 			coverageY = Min(fabsf(coverageY), 1.0f);
 			const f32 coverage = (coverageX + coverageY) * 0.5f;

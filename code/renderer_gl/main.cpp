@@ -47,21 +47,108 @@ const float epsilon = 0.0001;
 #define bandScale      glyphBandScale.zw
 #define bandMax        bandMaxTexCoords.xy
 #define bandsTexCoords bandMaxTexCoords.zw
-#define p1x            p12.x
-#define p1y            p12.y
-#define p2x            p12.z
-#define p2y            p12.w
-#define p3x            p3.x
-#define p3y            p3.y
+
+// traces a horizontal ray against the curve with control points p1, p2, p3
+// to trace a vertical ray, we simply swizzle the input coordinates
+// returns the coverage value
+float TraceRayCurveH(vec2 p1, vec2 p2, vec2 p3, float pixelsPerEm)
+{
+	if(max(max(p1.x, p2.x), p3.x) * pixelsPerEm < -0.5)
+	{
+		// the right-most curve point is on this fragment's left
+		// we can bail because the curves are sorted
+		return 0.0;
+	}
+
+	// generate the classification code
+	uint code = (0x2E74U >> (((p1.y > 0.0) ? 2U : 0U) + ((p2.y > 0.0) ? 4U : 0U) + ((p3.y > 0.0) ? 8U : 0U))) & 3U;
+	if(code == 0U)
+	{
+		// we're not intersecting this curve
+		return 0.0;
+	}
+
+	// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
+	vec2 a = p1 - p2 * 2.0f + p3;
+	vec2 b = p1 - p2;
+	float c = p1.y;
+	float ayr = 1.0 / a.y;
+	float d = sqrt(max(b.y * b.y - a.y * c, 0.0));
+	float t1 = (b.y - d) * ayr;
+	float t2 = (b.y + d) * ayr;
+
+	if(abs(a.y) < epsilon)
+	{
+		// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
+		t1 = t2 = c / (2.0 * b.y);
+	}
+
+	float coverage = 0.0;
+
+	if((code & 1U) != 0U)
+	{
+		float x1 = (a.x * t1 - b.x * 2.0) * t1 + p1.x;
+		float c = clamp(x1 * pixelsPerEm + 0.5, 0.0, 1.0);
+		coverage += c;
+	}
+
+	if(code > 1U)
+	{
+		float x2 = (a.x * t2 - b.x * 2.0) * t2 + p1.x;
+		float c = clamp(x2 * pixelsPerEm + 0.5, 0.0, 1.0);
+		coverage -= c;
+	}
+
+	return coverage;
+}
+
+// traces a horizontal ray against all curves in the specified band
+// returns the coverage value
+float TraceRayBandH(uvec2 bandData, float pixelsPerEm)
+{
+	float coverage = 0.0;
+
+	// try intersecting against every curve in the selected band
+	for(uint curve = 0U; curve < bandData.x; ++curve)
+	{
+		uint curveOffset = bandData.y + curve;
+		ivec2 curveLoc = ivec2(texelFetch(bandsTex, ivec2(curveOffset & 0xFFFU, curveOffset >> 12U)).xy);
+		vec4 p12 = texelFetch(curvesTex, curveLoc) / vec4(glyphScale, glyphScale) - vec4(texCoords, texCoords);
+		vec2 p3 = texelFetch(curvesTex, ivec2(curveLoc.x + 1, curveLoc.y)).xy / glyphScale - texCoords;
+
+		coverage += TraceRayCurveH(p12.xy, p12.zw, p3.xy, pixelsPerEm);
+	}
+
+	return coverage;
+}
+
+// traces a vertical ray against all curves in the specified band
+// returns the coverage value
+float TraceRayBandV(uvec2 bandData, float pixelsPerEm)
+{
+	float coverage = 0.0;
+
+	// try intersecting against every curve in the selected band
+	for(uint curve = 0U; curve < bandData.x; ++curve)
+	{
+		uint curveOffset = bandData.y + curve;
+		ivec2 curveLoc = ivec2(texelFetch(bandsTex, ivec2(curveOffset & 0xFFFU, curveOffset >> 12U)).xy);
+		vec4 p12 = texelFetch(curvesTex, curveLoc) / vec4(glyphScale, glyphScale) - vec4(texCoords, texCoords);
+		vec2 p3 = texelFetch(curvesTex, ivec2(curveLoc.x + 1, curveLoc.y)).xy / glyphScale - texCoords;
+
+		coverage += TraceRayCurveH(p12.yx, p12.wz, p3.yx, pixelsPerEm);
+	}
+
+	return coverage;
+}
 
 void main()
 {
-	float coverageX = 0.0;
-	float coverageY = 0.0;
-
 	vec2 pixelsPerEm = vec2(1.0 / fwidth(texCoords.x), 1.0 / fwidth(texCoords.y));
 
 	// compute indices for horizontal and vertical bands
+	// note that we simply clamp instead of bailing out early because unlike the software renderer,
+	// we set things up so that we can't have large empty sections
 	// x : vertical band index
 	// y : horizontal band index
 	uvec2 bandIndex = uvec2(clamp(uvec2(texCoords * bandScale), uvec2(0U, 0U), bandMax));
@@ -72,122 +159,17 @@ void main()
 	uint hBandOffset = bandsTexCoords.y * 4096U + bandsTexCoords.x + bandIndex.y;
 	uvec2 hBandData = texelFetch(bandsTex, ivec2(hBandOffset & 0xFFFU, hBandOffset >> 12U)).xy;
 
-	// shoot a horizontal ray
-	for(uint curve = 0U; curve < hBandData.x; ++curve)
-	{
-		uint curveOffset = hBandData.y + curve;
-		ivec2 curveLoc = ivec2(texelFetch(bandsTex, ivec2(curveOffset & 0xFFFU, curveOffset >> 12U)).xy);
-
-		vec4 p12 = texelFetch(curvesTex, curveLoc) / vec4(glyphScale, glyphScale) - vec4(texCoords, texCoords);
-		vec2 p3 = texelFetch(curvesTex, ivec2(curveLoc.x + 1, curveLoc.y)).xy / glyphScale - texCoords;
-		if(max(max(p1x, p2x), p3x) * pixelsPerEm.x < -0.5)
-		{
-			// the right-most curve point is on this fragment's left
-			// we can bail because the curves are sorted
-			break;
-		}
-
-		// generate the classification code
-		uint code = (0x2E74U >> (((p1y > 0.0) ? 2U : 0U) + ((p2y > 0.0) ? 4U : 0U) + ((p3y > 0.0) ? 8U : 0U))) & 3U;
-		if(code == 0U)
-		{
-			// we're not intersecting this curve
-			continue;
-		}
-
-		// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
-		float ax = p1x - p2x * 2.0 + p3x;
-		float ay = p1y - p2y * 2.0 + p3y;
-		float bx = p1x - p2x;
-		float by = p1y - p2y;
-		float c = p1y;
-		float ayr = 1.0 / ay;
-		float d = sqrt(max(by * by - ay * c, 0.0));
-		float t1 = (by - d) * ayr;
-		float t2 = (by + d) * ayr;
-
-		if(abs(ay) < epsilon)
-		{
-			// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
-			t1 = t2 = c / (2.0 * by);
-		}
-
-		if((code & 1U) != 0U)
-		{
-			float x1 = (ax * t1 - bx * 2.0) * t1 + p1x;
-			float c = clamp(x1 * pixelsPerEm.x + 0.5, 0.0, 1.0);
-			coverageX += c;
-		}
-
-		if(code > 1U)
-		{
-			float x2 = (ax * t2 - bx * 2.0) * t2 + p1x;
-			float c = clamp(x2 * pixelsPerEm.x + 0.5, 0.0, 1.0);
-			coverageX -= c;
-		}
-	}
-
 	// get the descriptor of the vertical band we're in
 	// x : curve count
 	// y : absolute texel offset into the bands texture
 	uint vBandOffset = bandsTexCoords.y * 4096U + bandsTexCoords.x + bandMax.y + 1U + bandIndex.x;
 	uvec2 vBandData = texelFetch(bandsTex, ivec2(vBandOffset & 0xFFFU, vBandOffset >> 12U)).xy;
 
-	// shoot a vertical ray
-	for(uint curve = 0U; curve < vBandData.x; ++curve)
-	{
-		uint curveOffset = vBandData.y + curve;
-		ivec2 curveLoc = ivec2(texelFetch(bandsTex, ivec2(curveOffset & 0xFFFU, curveOffset >> 12U)).xy);
+	// compute coverage values for each axis by tracing a horizontal ray and a vertical ray
+	float coverageX = TraceRayBandH(hBandData, pixelsPerEm.x);
+	float coverageY = TraceRayBandV(vBandData, pixelsPerEm.y);
 
-		vec4 p12 = texelFetch(curvesTex, curveLoc) / vec4(glyphScale, glyphScale) - vec4(texCoords, texCoords);
-		vec2 p3 = texelFetch(curvesTex, ivec2(curveLoc.x + 1, curveLoc.y)).xy / glyphScale - texCoords;
-		if(max(max(p1y, p2y), p3y) * pixelsPerEm.y < -0.5)
-		{
-			// the highest curve point is below this fragment
-			// we can bail because the curves are sorted
-			break;
-		}
-
-		// generate the classification code
-		uint code = (0x2E74U >> (((p1x > 0.0) ? 2U : 0U) + ((p2x > 0.0) ? 4U : 0U) + ((p3x > 0.0) ? 8U : 0U))) & 3U;
-		if(code == 0U)
-		{
-			// we're not intersecting this curve
-			continue;
-		}
-
-		// we solve the quadratic equation: a*t*t - 2*b*t + c = 0
-		float ax = p1x - p2x * 2.0 + p3x;
-		float ay = p1y - p2y * 2.0 + p3.y;
-		float bx = p1x - p2x;
-		float by = p1y - p2y;
-		float c = p1x;
-		float axr = 1.0 / ax;
-		float d = sqrt(max(bx * bx - ax * c, 0.0));
-		float t1 = (bx - d) * axr;
-		float t2 = (bx + d) * axr;
-
-		if(abs(ax) < epsilon)
-		{
-			// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
-			t1 = t2 = c / (2.0 * bx);
-		}
-
-		if((code & 1U) != 0U)
-		{
-			float y1 = (ay * t1 - by * 2.0) * t1 + p1y;
-			float c = clamp(y1 * pixelsPerEm.y + 0.5, 0.0, 1.0);
-			coverageY += c;
-		}
-
-		if(code > 1U)
-		{
-			float y2 = (ay * t2 - by * 2.0) * t2 + p1y;
-			float c = clamp(y2 * pixelsPerEm.y + 0.5, 0.0, 1.0);
-			coverageY -= c;
-		}
-	}
-
+	// compute the final coverage value
 	coverageX = min(abs(coverageX), 1.0);
 	coverageY = min(abs(coverageY), 1.0);
 	fragmentColor = vec4(1.0, 1.0, 1.0, (coverageX + coverageY) * 0.5);
