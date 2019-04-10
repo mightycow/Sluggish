@@ -133,8 +133,10 @@ static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0,
 	const u32 axis1 = 1 - axis0;
 	f32 coverage = 0.0f;
 
+	// run an intersection test against every curve in the selected band
 	for(u32 curveIdx = 0; curveIdx < curveCount; ++curveIdx)
 	{
+		// locate and load the curve data
 		const ushort2 curveCoords = bandsTexture[bandOffset + curveIdx];
 		const u32 curveX = curveCoords.v[0];
 		const u32 curveY = curveCoords.v[1];
@@ -142,31 +144,38 @@ static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0,
 		const float4 cp3 = curvesTexture[curveY * TEXTURE_WIDTH + curveX + 1];
 		CHECK_CURVE(curveCoords, cp12, cp3);
 
+		// compute the 3 curve points relative to the current pixel (fx0, fy0)
 		const float2 p1 = { cp12.v[0] - fx0, cp12.v[1] - fy0 };
 		const float2 p2 = { cp12.v[2] - fx0, cp12.v[3] - fy0 };
 		const float2 p3 = { cp3.v[0] - fx0, cp3.v[1] - fy0 };
 		if(Max(p1.v[axis0], p2.v[axis0], p3.v[axis0]) * pixelsPerEm < -0.5f)
 		{
-			// no more curves to intersect with
+			// the highest coordinate of this curve is lower than this pixel's
+			// this means means we have no more curves to intersect with
+			// since the curve data is sorted
 			break;
 		}
 
+		// solve the quadratic equation: a*t*t - 2*b*t + c = 0
 		const f32 a = p1.v[axis1] - 2.0f * p2.v[axis1] + p3.v[axis1];
 		const f32 b = p1.v[axis1] - p2.v[axis1];
 		const f32 c = p1.v[axis1];
 		f32 t1, t2;
 		if(fabsf(a) < 0.0001f)
 		{
+			// a is too close to 0, so we solve this linear equation instead: c - 2*b*t = 0
 			t1 = t2 = c / (2.0f * b);
 		}
 		else
 		{
+			// all is good, we find the 2 roots the usual way
 			const f32 rootArg = Max(b*b - a*c, 0.0f);
 			const f32 root = sqrtf(rootArg);
 			t1 = (b - root) / a;
 			t2 = (b + root) / a;
 		}
 
+		// generate the curve classification code and update the coverage accordingly
 		const uint input = ((p1.v[axis1] > 0.0f) ? 2 : 0) + ((p2.v[axis1] > 0.0f) ? 4 : 0) + ((p3.v[axis1] > 0.0f) ? 8 : 0);
 		const uint output = 0x2E74 >> input;
 		if((output & 1) != 0)
@@ -174,7 +183,6 @@ static f32 TraceRay(u32 axis0, u32 curveCount, u32 bandOffset, f32 fx0, f32 fy0,
 			const f32 r1 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t1);
 			coverage += Clamp(0.5f + r1 * pixelsPerEm, 0.0f, 1.0f);
 		}
-
 		if((output & 2) != 0)
 		{
 			const f32 r2 = EvaluateQuadraticBezierCurve(p1.v[axis0], p2.v[axis0], p3.v[axis0], t2);
@@ -235,29 +243,41 @@ static bool RenderCodePoint(u32 codePoint, const char* outputPath, u32 w, u32 h,
 	const u32 bandCount = cp.bandCount;
 	for(u32 y = 0, yi = h - 1; y < h; ++y, --yi)
 	{
+		// compute this pixel's Y coordinate in em-space
+		// compute horizontal band index
 		const f32 fy0 = offsetY + (f32)y * scaleY;
 		const u32 hBandIdx = (u32)(fy0 / (f32)cp.bandDimY);
 		if(hBandIdx >= cp.bandCount)
 		{
+			// no band contains any curve we could intersect
 			continue;
 		}
 
+		// locate and load the horizontal band's data
 		const ushort2 hBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + hBandIdx];
 		const u32 hBandCurveCount = hBand.v[0];
 		const u32 hBandBandOffset = hBand.v[1];
 
 		for(u32 x = 0; x < w; ++x)
 		{
+			// compute this pixel's X coordinate in em-space
+			// compute vertical band index
 			const f32 fx0 = offsetX + (f32)x * scaleX;
 			const u32 vBandIdx = (u32)(fx0 / (f32)cp.bandDimX);
 			if(vBandIdx >= cp.bandCount)
 			{
+				// no band contains any curve we could intersect
 				continue;
 			}
 
+			// locate and load the vertical band's data
 			const ushort2 vBand = bandsTexture[cp.bandsTexCoordY * TEXTURE_WIDTH + cp.bandsTexCoordX + bandCount + vBandIdx];
 			const u32 vBandCurveCount = vBand.v[0];
 			const u32 vBandBandOffset = vBand.v[1];
+
+			// trace 2 rays for cheap (but imperfect) AA
+			// compute the final coverage
+			// write the pixel
 			f32 coverageX = TraceRay(0, hBandCurveCount, hBandBandOffset, fx0, fy0, pixelsPerEmX);
 			f32 coverageY = TraceRay(1, vBandCurveCount, vBandBandOffset, fx0, fy0, pixelsPerEmY);
 			coverageX = Min(fabsf(coverageX), 1.0f);
