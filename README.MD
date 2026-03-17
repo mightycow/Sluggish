@@ -1,8 +1,13 @@
-﻿# Presentation
+﻿# ⚠️ Patent Update ⚠️
 
-This is a toy/experimental project showing off how to get started rendering glyphs with Eric Lengyel's Slug algorithm on both CPUs and GPUs.
+**You don't need to worry about the patent anymore!**  
+**See why in [the patent section](#patent) below.**
 
-I recommend reading at least the slides linked in the reference section before any of the code.
+# Presentation
+
+This is a toy/experimental project showing off how to get started rendering glyphs with Eric Lengyel's Slug algorithm on both CPUs and GPUs. This old project was a quick prototype to evaluate the rendering algorithm. I've made it public in the hope it could serve as a useful learning resource.
+
+I recommend reading at least the slides linked in the [references](#references) section before any of the code.
 
 ## Requirements
 
@@ -58,6 +63,19 @@ Journal of Computer Graphics Techniques (JCGT), vol. 6, no. 2, 31-47, 2017
 Paper: <http://jcgt.org/published/0006/02/02>  
 Slides: <http://terathon.com/i3d2018_lengyel.pdf>
 
+Eric Lengyel's 2019 article about **dynamic glyph dilation**:  
+https://terathon.com/blog/glyph-dilation.html
+
+Eric Lengyel's 2026 open sourced implementations of the **vertex and pixel shaders**:  
+https://github.com/EricLengyel/Slug
+
+Eric Lengyel's 2026 article about **rendering improvements**:  
+https://terathon.com/blog/decade-slug.html  
+The changes are:
+- added dynamic glyph dilation
+- removed adaptive supersampling
+- removed band split optimization
+
 # Licenses
 
 | Project/File | License(s) | License File(s) |
@@ -71,4 +89,12 @@ Slides: <http://terathon.com/i3d2018_lengyel.pdf>
 
 # Patent
 
-While there is no patent on the Slug algorithm as of the time of writing, Eric Lengyel has made an application for one and the process is still on-going...
+As of March 17 2026, Eric Lengyel announced that he is "permanently and irrevocably dedicating the Slug patent to the public domain". He also wrote that "anybody can freely implement the Slug algorithm from this day forward without a license for whatever purpose they want, and they don’t need to worry about infringing upon any intellectual property rights." For more details on the legalese of that change, refer to:  
+https://terathon.com/blog/decade-slug.html
+
+Patent: https://patents.google.com/patent/US10373352B1
+
+History:
+- 2018-02-01: application filed
+- 2019-08-06: application granted
+- 2026-03-17: form SB/43 filed
